@@ -1,0 +1,142 @@
+
+conn system/coti as sysdba
+
+host loadjava.bat -user sys/coti -resolve -synonym C:\Oracle\product\11.2.0\dbhome_1\LIB\activation.jar
+host loadjava.bat -user sys/coti -resolve -synonym C:\Oracle\product\11.2.0\dbhome_1\LIB\mail.jar
+
+
+call sys.dbms_java.loadjava('-v -r -grant PUBLIC -synonym C:\Oracle\product\11.2.0\dbhome_1\LIB\activation.jar');
+call sys.dbms_java.loadjava('-v -r -grant PUBLIC -synonym C:\Oracle\product\11.2.0\dbhome_1\LIB\mail.jar');
+
+
+shutdown immediate
+startup
+
+
+conn system/coti as sysdba;
+
+grant execute on UTL_SMTP to system;
+grant execute on UTL_HTTP to system;
+
+@C:\Oracle\product\11.2.0\dbhome_1\RDBMS\ADMIN\utlmail.sql
+@C:\Oracle\product\11.2.0\dbhome_1\RDBMS\ADMIN\prvtmail.plb
+
+
+show parameter spfile;
+
+alter system set smtp_out_server = '127.0.0.1:25' scope=both;
+
+shutdown immediate;
+startup
+
+conn system/coti as sysdba;
+
+
+call dbms_java.grant_permission('SYSTEM', 
+'java.net.SocketPermission','smtp.gmail.com','resolve');
+
+commit; 
+
+call dbms_java.grant_permission('SYSTEM', 
+'java.util.PropertyPermission', '*', 'read,write');
+
+commit; 
+
+
+call dbms_java.grant_permission('SYSTEM', 
+'java.lang.RuntimePermission', 'getClassLoader', '');
+
+commit; 
+
+
+call dbms_java.grant_permission('SYSTEM', 
+'java.net.SocketPermission','173.194.67.109:587','connect, resolve');
+
+conn system/coti
+
+
+set serveroutput on size 10000;
+
+exec dbms_java.set_output(10000);
+
+create or replace and compile java source named "Email" as
+
+import java.util.Properties;
+
+import javax.mail.Authenticator;
+import javax.mail.Message.RecipientType;
+import javax.mail.PasswordAuthentication;
+import javax.mail.Session;
+import javax.mail.Transport;
+import javax.mail.internet.InternetAddress;
+import javax.mail.internet.MimeMessage;
+
+public class Email {
+
+	private static final String CONTA = "cotiexemplo@gmail.com";
+	private static final String SENHA = "@coticoti@";
+
+	public static void enviarEmail(String destinatario, String assunto,
+			String mensagem) throws Exception {
+
+		Properties p = new Properties();
+
+		p.put("mail.debug", "true");
+		p.put("mail.host", "smtp.gmail.com");
+		p.put("mail.smtp.port", "587");
+		p.put("mail.smtp.ssl.enable", "true");
+		p.put("mail.smtp.starttls.enable", "true");
+		p.put("mail.smtp.auth", "true");
+
+		Session session = Session
+				.getInstance(p, new Autenticacao(CONTA, SENHA));
+
+		MimeMessage msg = new MimeMessage(session);
+
+		msg.setFrom(new InternetAddress(CONTA));
+		msg.addRecipients(RecipientType.TO, destinatario);
+		msg.setSubject(assunto);
+		msg.setContent(mensagem, "text/html");
+
+		Transport.send(msg);
+	}
+}
+
+class Autenticacao extends Authenticator {
+
+	private String conta;
+	private String senha;
+
+	public Autenticacao(String conta, String senha) {
+		this.conta = conta;
+		this.senha = senha;
+	}
+
+	public PasswordAuthentication getPasswordAuthentication() {
+		return new PasswordAuthentication(conta, senha);
+	}
+}
+/
+
+
+
+create or replace procedure enviaemail(
+	vdestinatario 	varchar2,
+	vassunto	varchar2,
+	vmensagem	varchar2
+)
+as language java 
+name 'Email.enviarEmail(java.lang.String, java.lang.String, java.lang.String)';
+/
+
+
+exec /l('sergio.coti@gmail.com', 'Mensagem', 'teste envio de email');
+
+
+
+
+
+
+
+
+
